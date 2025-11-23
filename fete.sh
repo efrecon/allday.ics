@@ -140,6 +140,7 @@ ics_language() { [ -n "$1" ] && printf ';LANGUAGE:%s' "$1"; }
 
 # Output ICS header
 ics_header() {
+  trace "Generating ICS header"
   cat <<EOF
 BEGIN:VCALENDAR
 VERSION:2.0
@@ -154,6 +155,7 @@ EOF
 
 # Output ICS footer
 ics_footer() {
+  trace "Generating ICS footer"
   cat <<EOF
 END:VCALENDAR
 EOF
@@ -192,12 +194,16 @@ EOF
 # from stdin, one per line in YYYY-MM-DD format, as typically output by
 # date_span or date_interval.
 ics_entries() {
-  while read -r d; do
+  while IFS= read -r d; do
     birthday=$(date -d "$d" +%d-%m)
     info "Getting name for birthday %s" "$birthday"
     name=$( run_curl "${FETE_DUJOUR_API%%/}/v2/${FETE_KEY}/json-normal-${birthday}" |
             jq -r '.name' || true )
-    [ -n "$name" ] && ics_entry "$d" "$name"
+    if [ -n "$name" ]; then
+      ics_entry "$d" "$name"
+    else
+      warn "No name found for birthday %s" "$birthday"
+    fi
   done
 }
 
@@ -237,7 +243,6 @@ if [ -z "$FETE_KEY" ]; then
   [ -z "$FETE_KEY" ] && error "Could not obtain API key for IP address %s" "$FETE_IP"
   info "Obtained API key for IP %s: %s" "$FETE_IP" "$FETE_KEY"
 fi
-
 
 if [ -n "$FETE_DAYS" ] && [ "$FETE_DAYS" -gt 0 ]; then
   {
