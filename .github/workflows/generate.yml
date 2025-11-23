@@ -24,7 +24,7 @@ jobs:
       - name: Generate Calendar
         run: |
           mkdir -p ./ics/fr-FR
-          ./fete.sh -v -d 15 -l "fr-FR" > ./ics/fr-FR/fetedujour.ics
+          ./fete.sh -v -d 9 > ./ics/fr-FR/fetedujour.ics
 
       - name: Upload Pages
         uses: actions/upload-pages-artifact@v4
