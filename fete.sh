@@ -196,7 +196,7 @@ ics_entries() {
     birthday=$(date -d "$d" +%d-%m)
     info "Getting name for birthday %s" "$birthday"
     name=$( run_curl "${FETE_DUJOUR_API%%/}/v2/${FETE_KEY}/json-normal-${birthday}" |
-            jq -r '.name' )
+            jq -r '.name' || true )
     [ -n "$name" ] && ics_entry "$d" "$name"
   done
 }
