@@ -208,10 +208,10 @@ ics_entries() {
 download() { run_curl -o "${2:-$(basename "$1")}" "$1"; }
 
 
-# Wrapper around curl to add common options
+# Wrapper around curl to add common options. No -f so that we can handle errors
 # $@: curl arguments
 run_curl() {
-  curl -fsSL --retry 5 --retry-delay 3 "$@"
+  curl -sSL --retry 5 --retry-delay 3 "$@"
 }
 
 
