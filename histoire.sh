@@ -120,7 +120,7 @@ all_events() {
   fr_daymonth=$(  printf %s\\n "$eng_daymonth" | \
                   sed -E 's/January/janvier/; s/February/février/; s/March/mars/; s/April/avril/; s/May/mai/; s/June/juin/; s/July/juillet/; s/August/août/; s/September/septembre/; s/October/octobre/; s/November/novembre/; s/December/décembre/' )
   _url="${HISTOIRE_DUJOUR_ROOT}-${fr_daymonth}.html"
-  trace "Downloading page for %s from %s" "$fr_daymonth" "$_url"
+  info "Downloading page for %s from %s" "$fr_daymonth" "$_url"
   tmp=$(mktemp)
   run_curl "$_url" |
     "${HISTOIRE_HTML2TEXT}" \
@@ -151,7 +151,7 @@ all_events() {
   done < "$tmp"
 
   rm -f "$tmp"
-  trace "Extracted events to %s" "$outdir"
+  info "Extracted events to %s" "$outdir"
   printf '%s\n' "$outdir"
 }
 
