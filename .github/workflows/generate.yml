@@ -24,7 +24,13 @@ jobs:
       - name: Generate Calendar
         run: |
           mkdir -p ./ics/fr-FR
+
+          # Generate the ICS file for today's celebration
           ./fete.sh -v -d 9 > ./ics/fr-FR/fetedujour.ics
+
+          # Generate the ICS file for today's historical event
+          pip install html2text
+          ./histoire.sh -v -d 9 > ./ics/fr-FR/histoire.ics
 
       - name: Upload Pages
         uses: actions/upload-pages-artifact@v4
