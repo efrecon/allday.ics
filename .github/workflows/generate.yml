@@ -21,16 +21,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Generate Calendar
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          pip install html2text
+
+      - name: Prepare Output Directory
         run: |
           mkdir -p ./ics/fr-FR
 
+      - name: Generate fetedujour
+        run: |
           # Generate the ICS file for today's celebration
           ./fete.sh -v -d 9 > ./ics/fr-FR/fetedujour.ics
 
+      - name: Generate histoire
+        run: |
           # Generate the ICS file for today's historical event
-          pip install html2text
-
           ./histoire.sh -v -d 9 > ./ics/fr-FR/histoire.ics
 
       - name: Upload Pages
