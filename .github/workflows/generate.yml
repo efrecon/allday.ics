@@ -30,6 +30,7 @@ jobs:
 
           # Generate the ICS file for today's historical event
           pip install html2text
+
           ./histoire.sh -v -d 9 > ./ics/fr-FR/histoire.ics
 
       - name: Upload Pages
