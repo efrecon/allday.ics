@@ -3,6 +3,7 @@
 name: keepalive
 
 on:
+  workflow_dispatch:
   schedule:
     # Run every sunday at 1:27 UTC
     - cron: '27 1 * * SUN'
