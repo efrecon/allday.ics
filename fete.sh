@@ -179,7 +179,7 @@ EOF
 
 ics_fold() { fold -s -w 74 | sed 's/^/ /; 1s/^ //'; }
 
-# Output an ICS entry for a given person file. Content will be pinpointed to the
+# Output an ICS entry for a date and name. Content will be pinpointed to the
 # language if provided.
 # $1: date of the birthday in a format recognized by -d
 # $2: name of the saint/fete to celebrate on that day
@@ -213,13 +213,13 @@ EOF
 # recently, so this is a workaround.
 name_for_date() {
   # We have an API key, try the API first.
-  birthday=$(date -d "$1" +%d-%m)
-  day=$(date -d "$1" +%d)
+  birthday=$(date -u -d "$1" +%d-%m)
+  day=$(date -u -d "$1" +%d)
   if [ -n "$FETE_KEY" ]; then
     info "Getting name for birthday %s via API" "$birthday"
     name=$( run_curl "${FETE_DUJOUR_API%%/}/v2/${FETE_KEY}/json-normal-${birthday}" |
             jq -r '.name' || true)
-    if [ -n "$name" ]; then
+    if [ -n "$name" ] && [ "$name" != "null" ]; then
       printf '%s\n' "$name"
       return;  # Success, we are done!
     fi
@@ -245,7 +245,8 @@ name_for_date() {
       --ignore-images \
       --ignore-tables \
       --unicode-snob \
-      > "$tmp"
+      > "$tmp" || warn "Failed to download or convert page for %s" "$fr_month"
+  [ -s "$tmp" ] || return;  # Leaks a file, but ok...
   trace "Downloaded page for %s to %s" "$fr_month" "$tmp"
 
   # Extract the relevant section from the description of the month from and back
