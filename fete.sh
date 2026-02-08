@@ -28,8 +28,14 @@ if set -o | grep -q 'pipefail'; then set -o pipefail; fi
 # How to guess the IP address, can be "icanhazip" or "ifconfigme"
 : "${FETE_IP_GUESS:="https://icanhazip.com"}"
 
+# Command to convert HTML to text, used to parse the HTML page when the API is
+# not available. Default is "html2text", installed from pip. The list of options
+# when calling it is set in the code, and should not be changed.
 : "${FETE_HTML2TEXT:="html2text"}"
 
+# Command to extract a section of a text file between two regexes. Default is
+# "between.sh", which is a simple script that does this, and is included in this
+# repository.
 : "${FETE_BETWEEN:="${FETE_ROOTDIR%%/}/between.sh"}"
 
 # Language for entries in the calendar. Default is "fr-FR" (French), there is
@@ -175,7 +181,8 @@ ics_fold() { fold -s -w 74 | sed 's/^/ /; 1s/^ //'; }
 
 # Output an ICS entry for a given person file. Content will be pinpointed to the
 # language if provided.
-# $1: path to person file
+# $1: date of the birthday in a format recognized by -d
+# $2: name of the saint/fete to celebrate on that day
 ics_entry() {
   # Extract month and day from birthday to setup the yearly recurrence and when
   # the event starts and stops.
@@ -193,7 +200,7 @@ DTSTAMP:$(date -u +'%Y%m%dT%H%M%SZ')
 DTSTART;VALUE=DATE:$(date -u -d "$today" +'%Y%m%d')
 RRULE:FREQ=YEARLY;INTERVAL=1;BYMONTH=$month;BYMONTHDAY=$day
 X-MICROSOFT-CDO-ALLDAYEVENT:TRUE
-$(printf '%s:Nous fêtons les "%s"' "$(ics_localized "SUMMARY")" "$name" | ics_fold)
+$(printf '%s:Nous fêtons les "%s"' "$(ics_localized "SUMMARY")" "$2" | ics_fold)
 STATUS:CONFIRMED
 END:VEVENT
 EOF
@@ -241,7 +248,8 @@ name_for_date() {
       > "$tmp"
   trace "Downloaded page for %s to %s" "$fr_month" "$tmp"
 
-  # Extract the relevant section from the description of the month.
+  # Extract the relevant section from the description of the month from and back
+  # into the temp file passed as argument.
   "$FETE_BETWEEN" \
     -s '^[#]+ Fêtes et Saints de' \
     -e '^[#]+ Que se passe-t-il en' \
@@ -252,19 +260,18 @@ name_for_date() {
   # look for the line corresponding to the day of the month we are interested
   # in, and extract the name from it.
   while IFS= read -r line || [ -n "${line:-}" ]; do
-    if [ -n "$line" ]; then
-      if printf %s\\n "$line" | grep -qE '^[[:space:]]*\*[[:space:]]*[0-9]+[[:space:]]*'; then
-        _d=$(printf %s\\n "$line" | grep -Eo '[0-9]+' | head -n1)
-        if [ "$_d" -eq "$day" ]; then
-          name=$(printf %s\\n "$line" | sed -E 's/^[[:space:]]*\*[[:space:]]*[0-9]+[[:space:]]*//')
-          printf '%s\n' "$name"
-          break
-        fi
+    [ -n "$line" ] || continue
+    if printf %s\\n "$line" | grep -qE '^[[:space:]]*\*[[:space:]]*[0-9]+[[:space:]]*'; then
+      _d=$(printf %s\\n "$line" | grep -Eo '[0-9]+' | head -n1)
+      if [ "$_d" -eq "$day" ]; then
+        name=$(printf %s\\n "$line" | sed -E 's/^[[:space:]]*\*[[:space:]]*[0-9]+[[:space:]]*//')
+        printf '%s\n' "$name"
+        break
       fi
     fi
   done < "$tmp"
 
-  rm -f "$tmp"
+  rm -f "$tmp"; # Cleanup (unless we failed, but this is ok...)
 }
 
 
@@ -272,12 +279,13 @@ name_for_date() {
 # from stdin, one per line in YYYY-MM-DD format, as typically output by
 # date_span or date_interval.
 ics_entries() {
-  while IFS= read -r d; do
+  while IFS= read -r d || [ -n "${d:-}" ]; do
+    [ -z "$d" ] && continue
     name=$(name_for_date "$d")
     if [ -n "$name" ]; then
       ics_entry "$d" "$name"
     else
-      warn "No name found for birthday %s" "$birthday"
+      warn "No name found for date %s" "$d"
     fi
   done
 }
@@ -304,6 +312,8 @@ silent() { "$@" >/dev/null 2>&1 </dev/null; }
 # Verify required commands are available
 silent command -v fold || error "fold command not found"
 silent command -v jq || error "jq command not found"
+silent command -v "$FETE_BETWEEN" || error "between.sh command not found at %s" "$FETE_BETWEEN"
+silent command -v "$FETE_HTML2TEXT" || error "html2text command not found"
 
 # Acquire API key if not provided, this parses the HTML page so may break if the
 # page layout changes.
