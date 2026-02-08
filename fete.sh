@@ -5,6 +5,9 @@ set -eu
 # shellcheck disable=SC3040 # now part of POSIX, but not everywhere yet!
 if set -o | grep -q 'pipefail'; then set -o pipefail; fi
 
+# Root directory where this script is located
+: "${FETE_ROOTDIR:="$( cd -P -- "$(dirname -- "$(command -v -- "$0")")" && pwd -P )"}"
+
 # Number of days around today to include in the calendar. Default is 7 (one week
 # before and one week after today). When empty, the entire year is included.
 : "${FETE_DAYS:="7"}"
@@ -16,11 +19,24 @@ if set -o | grep -q 'pipefail'; then set -o pipefail; fi
 # acquired if not provided.
 : "${FETE_KEY:=""}"
 
+# Root URL for fete du jour.
+: "${FETE_DUJOUR_ROOT:="https://fetedujour.fr"}"
+
 # Base URL for FeteDuJour API (no version)
-: "${FETE_DUJOUR_API:="https://fetedujour.fr/api"}"
+: "${FETE_DUJOUR_API:="${FETE_DUJOUR_ROOT%%/}/api"}"
 
 # How to guess the IP address, can be "icanhazip" or "ifconfigme"
 : "${FETE_IP_GUESS:="https://icanhazip.com"}"
+
+# Command to convert HTML to text, used to parse the HTML page when the API is
+# not available. Default is "html2text", installed from pip. The list of options
+# when calling it is set in the code, and should not be changed.
+: "${FETE_HTML2TEXT:="html2text"}"
+
+# Command to extract a section of a text file between two regexes. Default is
+# "between.sh", which is a simple script that does this, and is included in this
+# repository.
+: "${FETE_BETWEEN:="${FETE_ROOTDIR%%/}/between.sh"}"
 
 # Language for entries in the calendar. Default is "fr-FR" (French), there is
 # little point in changing this.
@@ -163,9 +179,10 @@ EOF
 
 ics_fold() { fold -s -w 74 | sed 's/^/ /; 1s/^ //'; }
 
-# Output an ICS entry for a given person file. Content will be pinpointed to the
+# Output an ICS entry for a date and name. Content will be pinpointed to the
 # language if provided.
-# $1: path to person file
+# $1: date of the birthday in a format recognized by -d
+# $2: name of the saint/fete to celebrate on that day
 ics_entry() {
   # Extract month and day from birthday to setup the yearly recurrence and when
   # the event starts and stops.
@@ -183,10 +200,79 @@ DTSTAMP:$(date -u +'%Y%m%dT%H%M%SZ')
 DTSTART;VALUE=DATE:$(date -u -d "$today" +'%Y%m%d')
 RRULE:FREQ=YEARLY;INTERVAL=1;BYMONTH=$month;BYMONTHDAY=$day
 X-MICROSOFT-CDO-ALLDAYEVENT:TRUE
-$(printf '%s:Nous fêtons les "%s"' "$(ics_localized "SUMMARY")" "$name" | ics_fold)
+$(printf '%s:Nous fêtons les "%s"' "$(ics_localized "SUMMARY")" "$2" | ics_fold)
 STATUS:CONFIRMED
 END:VEVENT
 EOF
+}
+
+
+# Output the name of the saint(s) or fete(s) for a given date. This will first
+# try to use the API, and if that fails, it will parse the HTML page for the
+# month to find the name. This is a bit hacky, but the API has started to fail
+# recently, so this is a workaround.
+name_for_date() {
+  # We have an API key, try the API first.
+  birthday=$(date -u -d "$1" +%d-%m)
+  day=$(date -u -d "$1" +%d)
+  if [ -n "$FETE_KEY" ]; then
+    info "Getting name for birthday %s via API" "$birthday"
+    name=$( run_curl "${FETE_DUJOUR_API%%/}/v2/${FETE_KEY}/json-normal-${birthday}" |
+            jq -r '.name' || true)
+    if [ -n "$name" ] && [ "$name" != "null" ]; then
+      printf '%s\n' "$name"
+      return;  # Success, we are done!
+    fi
+  fi
+
+  # API failed or we don't have an API key, try the HTML page. This is more
+  # fragile, but better than nothing.
+  info "Getting name for birthday %s via HTML page" "$birthday"
+  eng_month=$(LC_ALL=C date -u -d "$1" +%B)
+  fr_month=$(  printf %s\\n "$eng_month" | \
+                  sed -E 's/January/janvier/; s/February/fevrier/; s/March/mars/; s/April/avril/; s/May/mai/; s/June/juin/; s/July/juillet/; s/August/aout/; s/September/septembre/; s/October/octobre/; s/November/novembre/; s/December/decembre/' )
+  _url="${FETE_DUJOUR_ROOT%%/}/${fr_month}/"
+
+  # Convert the HTML to some clean markdown-like text.
+  info "Downloading page for %s from %s" "$fr_month" "$_url"
+  tmp=$(mktemp)
+  run_curl "$_url" |
+    "${FETE_HTML2TEXT}" \
+      --ignore-emphasis \
+      --body-width 0 \
+      --ignore-links \
+      --ignore-mailto-links \
+      --ignore-images \
+      --ignore-tables \
+      --unicode-snob \
+      > "$tmp" || warn "Failed to download or convert page for %s" "$fr_month"
+  [ -s "$tmp" ] || return;  # Leaks a file, but ok...
+  trace "Downloaded page for %s to %s" "$fr_month" "$tmp"
+
+  # Extract the relevant section from the description of the month from and back
+  # into the temp file passed as argument.
+  "$FETE_BETWEEN" \
+    -s '^[#]+ Fêtes et Saints de' \
+    -e '^[#]+ Que se passe-t-il en' \
+    "$tmp"
+
+  # Ignore empty lines and understand that lines starting with "* <number>" are
+  # the ones describing the day of the month and the name of the saint/fete. We
+  # look for the line corresponding to the day of the month we are interested
+  # in, and extract the name from it.
+  while IFS= read -r line || [ -n "${line:-}" ]; do
+    [ -n "$line" ] || continue
+    if printf %s\\n "$line" | grep -qE '^[[:space:]]*\*[[:space:]]*[0-9]+[[:space:]]*'; then
+      _d=$(printf %s\\n "$line" | grep -Eo '[0-9]+' | head -n1)
+      if [ "$_d" -eq "$day" ]; then
+        name=$(printf %s\\n "$line" | sed -E 's/^[[:space:]]*\*[[:space:]]*[0-9]+[[:space:]]*//')
+        printf '%s\n' "$name"
+        break
+      fi
+    fi
+  done < "$tmp"
+
+  rm -f "$tmp"; # Cleanup (unless we failed, but this is ok...)
 }
 
 
@@ -194,15 +280,13 @@ EOF
 # from stdin, one per line in YYYY-MM-DD format, as typically output by
 # date_span or date_interval.
 ics_entries() {
-  while IFS= read -r d; do
-    birthday=$(date -d "$d" +%d-%m)
-    info "Getting name for birthday %s" "$birthday"
-    name=$( run_curl "${FETE_DUJOUR_API%%/}/v2/${FETE_KEY}/json-normal-${birthday}" |
-            jq -r '.name' || true )
+  while IFS= read -r d || [ -n "${d:-}" ]; do
+    [ -z "$d" ] && continue
+    name=$(name_for_date "$d")
     if [ -n "$name" ]; then
       ics_entry "$d" "$name"
     else
-      warn "No name found for birthday %s" "$birthday"
+      warn "No name found for date %s" "$d"
     fi
   done
 }
@@ -229,6 +313,8 @@ silent() { "$@" >/dev/null 2>&1 </dev/null; }
 # Verify required commands are available
 silent command -v fold || error "fold command not found"
 silent command -v jq || error "jq command not found"
+silent command -v "$FETE_BETWEEN" || error "between.sh command not found at %s" "$FETE_BETWEEN"
+silent command -v "$FETE_HTML2TEXT" || error "html2text command not found"
 
 # Acquire API key if not provided, this parses the HTML page so may break if the
 # page layout changes.
