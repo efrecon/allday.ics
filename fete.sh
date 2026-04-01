@@ -252,7 +252,7 @@ name_for_date() {
   # Extract the relevant section from the description of the month from and back
   # into the temp file passed as argument.
   "$FETE_BETWEEN" \
-    -s '^[#]+ Fêtes et Saints de' \
+    -s '^[#]+ Fêtes et Saints d' \
     -e '^[#]+ Que se passe-t-il en' \
     "$tmp"
 
