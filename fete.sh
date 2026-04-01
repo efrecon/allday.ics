@@ -262,10 +262,10 @@ name_for_date() {
   # in, and extract the name from it.
   while IFS= read -r line || [ -n "${line:-}" ]; do
     [ -n "$line" ] || continue
-    if printf %s\\n "$line" | grep -qE '^[[:space:]]*\*[[:space:]]*[0-9]+[[:space:]]*'; then
+    if printf %s\\n "$line" | grep -qE '^[[:space:]]*[0-9]+\.[[:space:]]*'; then
       _d=$(printf %s\\n "$line" | grep -Eo '[0-9]+' | head -n1)
       if [ "$_d" -eq "$day" ]; then
-        name=$(printf %s\\n "$line" | sed -E 's/^[[:space:]]*\*[[:space:]]*[0-9]+[[:space:]]*//')
+        name=$(printf %s\\n "$line" | sed -E 's/^[[:space:]]*[0-9]+\.[[:space:]]*[^:]*:[[:space:]]*//')
         printf '%s\n' "$name"
         break
       fi
